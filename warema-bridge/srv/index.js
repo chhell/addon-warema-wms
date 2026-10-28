@@ -21,6 +21,15 @@ const settingsPar = {
 
 const devices = [];
 
+// WMS positions for open and closed, awnings (type 25) are open when extended
+function openPosition(device) {
+    return devices[device] && devices[device].type === 25 ? 100 : 0;
+}
+
+function closedPosition(device) {
+    return 100 - openPosition(device);
+}
+
 function registerDevice(element) {
     log.info('Registering ' + element.snr)
     var topic = 'homeassistant/cover/' + element.snr + '/' + element.snr + '/config'
@@ -167,14 +176,16 @@ function registerDevice(element) {
             break;
         case 25:
             model = 'Vertical awning';
+            // WMS reports 0 when retracted, HA expects an awning to be open when extended
             payload = {
                 ...base_payload,
                 device: {
                     ...base_device,
                     model: model
                 },
-                position_open: 0,
-                position_closed: 100,
+                device_class: 'awning',
+                position_open: 100,
+                position_closed: 0,
                 state_topic: 'warema/' + element.snr + '/state',
                 command_topic: 'warema/' + element.snr + '/set',
                 position_topic: 'warema/' + element.snr + '/position',
@@ -288,15 +299,16 @@ function callback(err, msg) {
                     client.publish('warema/' + msg.payload.snr + '/position', '' + msg.payload.position, {retain: true})
 
                     if (msg.payload.moving === false) {
-                        if (msg.payload.position === 0)
+                        if (msg.payload.position === openPosition(msg.payload.snr))
                             client.publish('warema/' + msg.payload.snr + '/state', 'open', {retain: true});
-                        else if (msg.payload.position === 100)
+                        else if (msg.payload.position === closedPosition(msg.payload.snr))
                             client.publish('warema/' + msg.payload.snr + '/state', 'closed', {retain: true});
                         else
                             client.publish('warema/' + msg.payload.snr + '/state', 'stopped', {retain: true});
                     }
                 }
-                if (typeof msg.payload.angle !== "undefined" && !isNaN(msg.payload.angle)) {
+                // Devices without slats report an out of range angle (raw FF)
+                if (typeof msg.payload.angle !== "undefined" && msg.payload.angle >= -100 && msg.payload.angle <= 100) {
                     devices[msg.payload.snr].angle = msg.payload.angle;
                     client.publish('warema/' + msg.payload.snr + '/tilt', '' + msg.payload.angle, {retain: true})
                 }
@@ -388,12 +400,12 @@ client.on('message', function (topic, message) {
                     break;
                 case 'CLOSE':
                     log.debug('Closing ' + device);
-                    stickUsb.vnBlindSetPosition(device, 100)
+                    stickUsb.vnBlindSetPosition(device, closedPosition(device))
                     client.publish('warema/' + device + '/state', 'closing');
                     break;
                 case 'OPEN':
                     log.debug('Opening ' + device);
-                    stickUsb.vnBlindSetPosition(device, 0);
+                    stickUsb.vnBlindSetPosition(device, openPosition(device));
                     client.publish('warema/' + device + '/state', 'opening');
                     break;
                 case 'STOP':

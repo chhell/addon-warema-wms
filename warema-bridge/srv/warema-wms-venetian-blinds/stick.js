@@ -109,8 +109,14 @@ function privateCmdQueueProcess(stickObj) {
             } else {
                 log.info("wmsRetry " + stickObj.currentWmsMsg.msgType + " " + stickObj.currentWmsMsg.snr + " " + JSON.stringify(stickObj.currentWmsMsg.stickCmd.cmd) + ".");
                 stickObj.currentWmsMsg.retry--;
-                // Retry right away instead of waiting behind the whole queue
-                stickObj.wmsMsgQueue.unshift(stickObj.currentWmsMsg);
+                // Retry right away instead of waiting behind the whole queue, but don't hold up
+                // user commands with retries of background requests to a device that doesn't answer
+                if (stickObj.currentWmsMsg.priority) {
+                    stickObj.wmsMsgQueue.unshift(stickObj.currentWmsMsg);
+                } else {
+                    var pos = stickObj.wmsMsgQueue.findIndex(msg => !msg.priority);
+                    stickObj.wmsMsgQueue.splice(pos < 0 ? stickObj.wmsMsgQueue.length : pos, 0, stickObj.currentWmsMsg);
+                }
 
                 privateUpdateWmsComStatistics(stickObj, stickObj.currentWmsMsg.snr, "wmsRetry");
             }

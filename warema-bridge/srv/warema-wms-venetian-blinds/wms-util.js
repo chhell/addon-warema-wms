@@ -87,6 +87,7 @@ function wmsMsgNew(cmd, snr, params) {
                 this.retry = 5;
                 break;
             case "blindMoveToPos":
+            case "lightSetLevel":
                 this.timeout = 500;
                 this.delayAfter = 300;
                 this.retry = 3;
@@ -137,6 +138,17 @@ function encodeCmd(cmd, snr, params) {
             ret.expect.msgType = "blindMoveToPosResponse";
             ret.expect.snr = snrHex;
             ret.cmd = '{R06' + snrHex + '7070' + '03' + wmsPosPercentToHex(params.pos) + wmsAnglePercentToHex(params.ang) + 'FFFF}'; //no idea how valance works
+            break;
+        case "lightSetLevel":
+            // Dimmer (e.g. LED strip, type 28): brightness uses the same command and encoding as a blind position.
+            // Remaining bytes FF = leave unchanged (keeps the configured dimming speed and limits).
+            if (params.level === undefined) {
+                log.error("wmsUtil: lightSetLevel: level undefined. Assuming 0.");
+                params.level = 0;
+            }
+            ret.expect.msgType = "blindMoveToPosResponse";
+            ret.expect.snr = snrHex;
+            ret.cmd = '{R06' + snrHex + '7070' + '03' + wmsPosPercentToHex(params.level) + 'FFFFFF}';
             break;
         case "blindStopMove":
             ret.cmd = '{R06' + snrHex + "7070" + "01" + "FF" + "FF" + "FFFF00}";
@@ -341,6 +353,9 @@ function decodeStickCmd(rcv) {
                         break;
                     case '25':
                         params.deviceTypeStr = 'Radio motor      ';
+                        break;
+                    case '28':
+                        params.deviceTypeStr = 'Dimmer (LED)     ';
                         break;
                     case '63':
                         params.deviceTypeStr = 'Web control      ';

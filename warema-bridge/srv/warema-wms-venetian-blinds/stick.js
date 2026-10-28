@@ -902,6 +902,38 @@ class Stick {
     }
 
     // ~ ~ method ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
+    // Dimmer (e.g. LED strip, type 28): the brightness level (0-100) is reported as the device position.
+    vnLightSetLevel(id, level) {
+        log.silly("vnLightSetLevel( (" + (typeof id) + ") \"" + id + "\", " + level + " )");
+        var stickObj = this;
+        var blind = stickObj.vnBlindGet(id);
+
+        // . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+        function vnLightSetLevelCompletion(error, wmsMsgSend, wmsMsgRcv) {
+            privateHandleWmsCompletionGeneric(error, wmsMsgSend, wmsMsgRcv);
+
+            if (!error) {
+                privateUpdateBlindPosWithCallback(blind, new VnBlindPos(blind.posCurrent.pos, blind.posCurrent.ang, true/*moving*/), stickObj.callback);
+            }
+        }
+
+        // . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+
+        if (blind) {
+            level = Math.min(Math.max(parseInt(level) || 0, 0), 100);
+            blind.posRequested = new VnBlindPos(level, 0, true/*moving*/);
+            privateCmdQueueEnqueue(stickObj, new wmsUtil.wmsMsgNew("lightSetLevel", blind.snr, {
+                level: level
+            }), vnLightSetLevelCompletion);
+            setTimeout(function () {
+                privateCmdQueueProcess(stickObj);
+            }, DELAY_MSG_PROC);
+        } else {
+            log.warn("vnLightSetLevel: Cannot find device \"" + id + "\".");
+        }
+    }
+
+    // ~ ~ method ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
     vnBlindGetPosition(id, optionsPar) {
         log.silly("vnBlindGetPosition( (" + (typeof id) + ") \"" + id + "\" )");
         var stickObj = this;

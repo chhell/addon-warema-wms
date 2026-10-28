@@ -182,6 +182,25 @@ function registerDevice(element) {
             }
 
             break;
+        case 28:
+            // Dimmer, e.g. LED strip built into the awning. Brightness 0-100 is reported as position.
+            model = 'LED';
+            topic = 'homeassistant/light/' + element.snr + '/' + element.snr + '/config'
+            payload = {
+                ...base_payload,
+                device: {
+                    ...base_device,
+                    model: model
+                },
+                state_topic: 'warema/' + element.snr + '/state',
+                command_topic: 'warema/' + element.snr + '/set',
+                brightness_state_topic: 'warema/' + element.snr + '/brightness',
+                brightness_command_topic: 'warema/' + element.snr + '/set_brightness',
+                brightness_scale: 100,
+                on_command_type: 'brightness',
+            }
+
+            break;
         default:
             log.info('Unrecognized device type: ' + element.type)
             model = 'Unknown model ' + element.type
@@ -195,7 +214,7 @@ function registerDevice(element) {
 
         stickUsb.vnBlindAdd(parseInt(element.snr), element.snr.toString());
 
-        devices[element.snr] = {};
+        devices[element.snr] = {type: parseInt(element.type)};
 
         client.publish(availability_topic, 'online', {retain: true})
         client.publish(topic, JSON.stringify(payload), {retain: true})
@@ -246,6 +265,19 @@ function callback(err, msg) {
                 break;
             case 'wms-vb-blind-position-update':
                 log.debug('Position update: \n' + JSON.stringify(msg.payload, null, 2))
+
+                if (devices[msg.payload.snr] && devices[msg.payload.snr].type === 28) {
+                    // Dimmer: position carries the brightness level (0-100)
+                    if (typeof msg.payload.position !== "undefined" && msg.payload.position >= 0 && msg.payload.position <= 100) {
+                        devices[msg.payload.snr].position = msg.payload.position;
+                        if (msg.payload.position > 0) {
+                            devices[msg.payload.snr].lastLevel = msg.payload.position;
+                            client.publish('warema/' + msg.payload.snr + '/brightness', '' + msg.payload.position, {retain: true})
+                        }
+                        client.publish('warema/' + msg.payload.snr + '/state', msg.payload.position > 0 ? 'ON' : 'OFF', {retain: true})
+                    }
+                    break;
+                }
 
                 if (typeof msg.payload.position !== "undefined") {
                     devices[msg.payload.snr].position = msg.payload.position;
@@ -303,6 +335,7 @@ client.on('connect', function () {
         'warema/+/set',
         'warema/+/set_position',
         'warema/+/set_tilt',
+        'warema/+/set_brightness',
         'homeassistant/status'
     ]);
 })
@@ -331,8 +364,18 @@ client.on('message', function (topic, message) {
         case 'set':
             switch (message) {
                 case 'ON':
+                    if (devices[device] && devices[device].type === 28) {
+                        log.debug('Turning on ' + device);
+                        stickUsb.vnLightSetLevel(device, devices[device].lastLevel || 100);
+                    }
+                    //TODO: use stick to turn on smart socket
+                    break;
                 case 'OFF':
-                    //TODO: use stick to turn on/off
+                    if (devices[device] && devices[device].type === 28) {
+                        log.debug('Turning off ' + device);
+                        stickUsb.vnLightSetLevel(device, 0);
+                    }
+                    //TODO: use stick to turn off smart socket
                     break;
                 case 'CLOSE':
                     log.debug('Closing ' + device);
@@ -357,6 +400,10 @@ client.on('message', function (topic, message) {
         case 'set_tilt':
             log.debug('Setting ' + device + ' to ' + message + '°, position ' + devices[device].position);
             stickUsb.vnBlindSetPosition(device, parseInt(devices[device]['position']), parseInt(message))
+            break;
+        case 'set_brightness':
+            log.debug('Setting brightness of ' + device + ' to ' + message + '%');
+            stickUsb.vnLightSetLevel(device, parseInt(message));
             break;
         default:
             log.info('Unrecognised command from HA')

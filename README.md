@@ -22,6 +22,7 @@ FORCE_DEVICES
 : A comma-separated list of devices to monitor for status and position updates. The devices included in this list will be added to Home assistant even
 if the automatic scanning process can't detect them. Their online status will be updated whenever they are in range. You can specify a particular device type for the forced devices
 using the format `DEVICE_ID:DEVICE_TYPE` for each device in the list. In case no type is specified, type 25 is assumed (radio-controlled motor). For a list of supported device types check https://www.npmjs.com/package/warema-wms-venetian-blinds.
+Dimmers of type 28 (e.g. LED strips built into an awning) are exposed to Home Assistant as dimmable lights.
 
 POLLING_INTERVAL
 : Default value: 30000. Time interval in ms between each request to all devices to report their position and state.  

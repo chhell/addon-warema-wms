@@ -1,9 +1,9 @@
-#!/usr/bin/execlineb -S0
+#!/usr/bin/env bashio
 # ==============================================================================
-# Home Assistant Community Add-on: Warema Bridge
-# Take down the S6 supervision tree when the Warema bridge fails
+# Take down the add-on when the Warema bridge fails, so the Supervisor
+# watchdog can restart it
 # ==============================================================================
-if -n { s6-test $# -ne 0 }
-if -n { s6-test ${1} -eq 256 }
-
-s6-svscanctl -t /var/run/s6/services
+if [[ "${1}" -ne 0 ]] && [[ "${1}" -ne 256 ]]; then
+  bashio::log.warning "Warema bridge exited with code ${1}, halting add-on"
+  exec /run/s6/basedir/bin/halt
+fi

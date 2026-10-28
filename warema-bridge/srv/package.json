@@ -1,8 +1,8 @@
 {
   "name": "addon-warema-wms",
   "scripts": {
-    "start": "node warema-bridge/srv/index.js",
-    "build": "docker buildx build --tag santam/wms-mqtt:latest --platform linux/amd64,linux/arm64,linux/arm/v7 -f standalone.Dockerfile ."
+    "start": "node index.js",
+    "build": "docker buildx build --tag santam/wms-mqtt:latest --platform linux/amd64,linux/arm64,linux/arm/v7 -f ../../standalone.Dockerfile ../.."
   },
   "dependencies": {
     "@serialport/parser-delimiter": "^10.0.0",

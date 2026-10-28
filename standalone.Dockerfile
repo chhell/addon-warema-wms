@@ -5,8 +5,8 @@ RUN apk add --no-cache python3 make g++ linux-headers
 
 WORKDIR app
 
-COPY package-lock.json .
-COPY package.json .
+COPY warema-bridge/srv/package-lock.json .
+COPY warema-bridge/srv/package.json .
 
 # rebuild from sources to avoid issues with prebuilt binaries (https://github.com/serialport/node-serialport/issues/2438
 RUN npm ci --omit=dev && npm rebuild --build-from-source

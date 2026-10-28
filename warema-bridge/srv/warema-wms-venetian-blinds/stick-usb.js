@@ -85,8 +85,8 @@ class StickUsb extends WmsVbStick {
                     log.silly("foreach " + port.path);
                     if (true || port.path.includes("USB")) {
 
-                        var testPort = new SerialPort(port.path, {baudRate: 125000})
-                        var testParser = testPort.pipe(new Delimiter({delimiter: DelimiterChar}))
+                        var testPort = new SerialPort({path: port.path, baudRate: 125000})
+                        var testParser = testPort.pipe(new DelimiterParser({delimiter: DelimiterChar}))
 
                         testPort.on('open', function () {
                             log.silly('Opened serial port ' + port.path + '.');

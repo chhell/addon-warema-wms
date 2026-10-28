@@ -22,7 +22,10 @@ function privateCmdQueueEnqueue(stickObj, wmsMsg, onEnd, priority) {
     wmsMsg.onEnd = onEnd;
 
     if (priority === "priority") {
-        stickObj.wmsMsgQueue.unshift(wmsMsg);
+        // Insert behind already queued priority messages to keep their order
+        wmsMsg.priority = true;
+        var pos = stickObj.wmsMsgQueue.findIndex(msg => !msg.priority);
+        stickObj.wmsMsgQueue.splice(pos < 0 ? stickObj.wmsMsgQueue.length : pos, 0, wmsMsg);
         log.silly("Enqueued (priotity): " + wmsMsg.msgType + " " + wmsMsg.snr + " params: " + JSON.stringify(wmsMsg.params));
     } else {
         stickObj.wmsMsgQueue.push(wmsMsg);
@@ -31,12 +34,18 @@ function privateCmdQueueEnqueue(stickObj, wmsMsg, onEnd, priority) {
 }
 
 //--------------------------------------------------------------------------------------------------
+function privateCmdQueueMatches(wmsMsg, msgType, snr) {
+    // Queued messages carry the snr as hex, callers usually pass the numeric snr
+    return ((!msgType) || (wmsMsg.msgType === msgType)) &&
+        ((!snr) || (wmsMsg.snr === wmsUtil.snrNumToHex(snr)));
+}
+
+//--------------------------------------------------------------------------------------------------
 function privateCmdQueueRemove(stickObj, msgType, snr) {
     var countRemoved = 0;
     var i = 0;
     while (i < stickObj.wmsMsgQueue.length) {
-        if (((stickObj.wmsMsgQueue[i].msgType === msgType) || (!(msgType))) &&
-            ((stickObj.wmsMsgQueue[i].snr === snr) || (snr = "000000") || (!(snr)))) {
+        if (privateCmdQueueMatches(stickObj.wmsMsgQueue[i], msgType, snr)) {
             log.silly("privateCmdQueueRemove [" + i + "] " + stickObj.wmsMsgQueue[i].msgType + " " + stickObj.wmsMsgQueue[i].snr);
             stickObj.wmsMsgQueue.splice(i, 1);
             countRemoved++;
@@ -53,8 +62,7 @@ function privateCmdQueueHasMsg(stickObj, msgType, snr) {
     var i = 0;
     log.silly("privateCmdQueueHasMsg " + msgType + " " + snr + " ?");
     while ((i < stickObj.wmsMsgQueue.length) && hasMsg === false) {
-        if (((stickObj.wmsMsgQueue[i].msgType === msgType) || (!(msgType))) &&
-            ((stickObj.wmsMsgQueue[i].snr === snr) || (snr = "000000") || (!(snr)))) {
+        if (privateCmdQueueMatches(stickObj.wmsMsgQueue[i], msgType, snr)) {
             log.silly("privateCmdQueueHasMsg [" + i + "] " + stickObj.wmsMsgQueue[i].msgType + " " + stickObj.wmsMsgQueue[i].snr);
             hasMsg = true;
         } else {
@@ -101,13 +109,14 @@ function privateCmdQueueProcess(stickObj) {
             } else {
                 log.info("wmsRetry " + stickObj.currentWmsMsg.msgType + " " + stickObj.currentWmsMsg.snr + " " + JSON.stringify(stickObj.currentWmsMsg.stickCmd.cmd) + ".");
                 stickObj.currentWmsMsg.retry--;
-                stickObj.wmsMsgQueue.push(stickObj.currentWmsMsg);
+                // Retry right away instead of waiting behind the whole queue
+                stickObj.wmsMsgQueue.unshift(stickObj.currentWmsMsg);
 
                 privateUpdateWmsComStatistics(stickObj, stickObj.currentWmsMsg.snr, "wmsRetry");
             }
             privateCmdQueueClearExpects(stickObj);
         } else {
-            log.W("cmdQueueTimeoutHdlr: Currently no MSG processing.");
+            log.warn("cmdQueueTimeoutHdlr: Currently no MSG processing.");
         }
 
         setTimeout(function () {
@@ -159,7 +168,7 @@ function privateOnWmsMsgRcv(stickObj, wmsMsg) {
         if (stickObj.currentWmsMsg.onEnd) {
             stickObj.currentWmsMsg.onEnd(""/*error*/, stickObj.currentWmsMsg, wmsMsg);
         } else {
-            log.W(stickObj.name + " No callback for expected MSG: " + JSON.stringify(wmsMsg));
+            log.warn(stickObj.name + " No callback for expected MSG: " + JSON.stringify(wmsMsg));
         }
         if (stickObj.currentWmsMsg.delayAfter) {
             log.silly(stickObj.name + " Delay after this msg: " + stickObj.currentWmsMsg.delayAfter);
@@ -683,10 +692,10 @@ class Stick {
         log.silly("vnBlindAdd( " + snr + ", " + name + " )");
 
         if (stickObj.vnBlindGet(snr)) {
-            log.W("vnBlindAdd: Blind with snr " + snr + " is already added.");
+            log.warn("vnBlindAdd: Blind with snr " + snr + " is already added.");
         }
         if (stickObj.vnBlindGet(name)) {
-            log.W("vnBlindAdd: Blind with name \"" + name + "\" is already added.");
+            log.warn("vnBlindAdd: Blind with name \"" + name + "\" is already added.");
         }
 
         var blind = {};
@@ -828,10 +837,14 @@ class Stick {
         function doPosUpdInterval() {
             log.silly("doPosUpdInterval()");
             for (var i = 0; i < stickObj.vnBlinds.length; i++) {
-                stickObj.vnBlindGetPosition(stickObj.vnBlinds[i].snr, {
-                    cmdConfirmation: false,
-                    callbackOnUnchangedPos: false
-                });
+                // Don't pile up requests if the previous ones are still queued
+                if (!privateCmdQueueHasMsg(stickObj, "blindGetPos", stickObj.vnBlinds[i].snr)) {
+                    // Report unchanged positions too, so a stale state gets corrected
+                    stickObj.vnBlindGetPosition(stickObj.vnBlinds[i].snr, {
+                        cmdConfirmation: false,
+                        callbackOnUnchangedPos: true
+                    });
+                }
             }
         }
 
@@ -892,12 +905,12 @@ class Stick {
             privateCmdQueueEnqueue(stickObj, new wmsUtil.wmsMsgNew("blindMoveToPos", blind.snr, {
                 pos: position,
                 ang: angle
-            }), vnBlindSetPositionCompletion);
+            }), vnBlindSetPositionCompletion, "priority");
             setTimeout(function () {
                 privateCmdQueueProcess(stickObj);
             }, DELAY_MSG_PROC);
         } else {
-            log.W("vnBlindSetPosition: Cannot find blind \"" + id + "\".");
+            log.warn("vnBlindSetPosition: Cannot find blind \"" + id + "\".");
         }
     }
 
@@ -924,7 +937,7 @@ class Stick {
             blind.posRequested = new VnBlindPos(level, 0, true/*moving*/);
             privateCmdQueueEnqueue(stickObj, new wmsUtil.wmsMsgNew("lightSetLevel", blind.snr, {
                 level: level
-            }), vnLightSetLevelCompletion);
+            }), vnLightSetLevelCompletion, "priority");
             setTimeout(function () {
                 privateCmdQueueProcess(stickObj);
             }, DELAY_MSG_PROC);
@@ -971,7 +984,7 @@ class Stick {
             var blind = stickObj.vnBlindGet(id);
 
             if (!blind) {
-                log.W("vnBlindGetPosition: Cannot find blind \"" + id + "\".");
+                log.warn("vnBlindGetPosition: Cannot find blind \"" + id + "\".");
             } else {
                 privateCmdQueueEnqueue(stickObj, new wmsUtil.wmsMsgNew("blindGetPos", blind.snr, {}), vnBlindGetPositionCompletion);
                 setTimeout(function () {
@@ -1017,7 +1030,7 @@ class Stick {
                 // Before STOP remove allother  pending commands or blind
                 privateCmdQueueRemove(stickObj, null/*msgType*/, blind.snr);
 
-                privateCmdQueueEnqueue(stickObj, new wmsUtil.wmsMsgNew("blindStopMove", blind.snr, {}), vnBlindStopCompletion);
+                privateCmdQueueEnqueue(stickObj, new wmsUtil.wmsMsgNew("blindStopMove", blind.snr, {}), vnBlindStopCompletion, "priority");
                 setTimeout(function () {
                     privateCmdQueueProcess(stickObj);
                 }, DELAY_MSG_PROC);
@@ -1026,7 +1039,7 @@ class Stick {
                     stickObj.vnBlindGetPosition(blind.snr);
                 }
             } else {
-                log.W("vnBlindStop: Cannot find blind \"" + id + "\".");
+                log.warn("vnBlindStop: Cannot find blind \"" + id + "\".");
             }
 
         }
@@ -1044,7 +1057,7 @@ class Stick {
                 privateCmdQueueProcess(stickObj);
             }, DELAY_MSG_PROC);
         } else {
-            log.W("vnBlindWaveRequest: Cannot find blind \"" + id + "\".");
+            log.warn("vnBlindWaveRequest: Cannot find blind \"" + id + "\".");
         }
     }
 
@@ -1096,7 +1109,7 @@ class Stick {
                 privateCmdQueueProcess(stickObj);
             }, DELAY_MSG_PROC);
         } else {
-            log.W("slatTiltOver: Cannot find blind \"" + id + "\".");
+            log.warn("slatTiltOver: Cannot find blind \"" + id + "\".");
         }
 
     }

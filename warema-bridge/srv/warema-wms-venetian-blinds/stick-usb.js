@@ -152,22 +152,21 @@ class StickUsb extends WmsVbStick {
             stickObj.initWmsNetwork();
         })
 
+        // There is no way to recover the WMS network state in-process, so exit and let the supervisor restart us
         this.port.on('error', function (err) {
-            if (!portPath) {
-                portPath = portPath;
-            }
-
-            log.error(portPath + ' error: ', err.message)
-            this.status = "error";
+            log.error(portPath + ' error: ' + err.message);
+            stickObj.status = "error";
+            process.exit(1);
         })
 
         this.parser.on('data', function (data) {
             stickObj.comDataReceive(data.toString('utf8') + DelimiterChar);
         });
 
-        this.parser.on('close', function (data) {
-            log.debug(portPath + ' port closed. ');
-            this.status = "created";
+        this.port.on('close', function () {
+            log.error(portPath + ' port closed.');
+            stickObj.status = "error";
+            process.exit(1);
         });
     }
 
@@ -176,7 +175,7 @@ class StickUsb extends WmsVbStick {
         // . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
         function portWriteErrHdlr(err) {
             if (err) {
-                return console.log('Error on write to port: ', err.message)
+                return log.error('Error on write to port: ' + err.message)
             }
         }
 

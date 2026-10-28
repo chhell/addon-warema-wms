@@ -18,7 +18,10 @@
     "wms_channel": "int?",
     "wms_serial_port": "device(subsystem=tty)",
     "ignored_devices": "str?",
-    "force_devices": "str?"
+    "force_devices": "str?",
+    "polling_interval": "int(5000,)?",
+    "moving_interval": "int(0,)?",
+    "log_level": "list(error|warn|info|http|verbose|debug|silly)?"
   },
   "services": [
     "mqtt:need"

@@ -9,8 +9,8 @@ process.on('SIGINT', function () {
 const mqttServer = process.env.MQTT_SERVER || 'mqtt://localhost'
 const ignoredDevices = process.env.IGNORED_DEVICES ? process.env.IGNORED_DEVICES.split(',') : [];
 const forceDevices = process.env.FORCE_DEVICES ? process.env.FORCE_DEVICES.split(',') : [];
-const pollingInterval = process.env.POLLING_INTERVAL || 30000;
-const movingInterval = process.env.MOVING_INTERVAL || 1000;
+const pollingInterval = parseInt(process.env.POLLING_INTERVAL) || 30000;
+const movingInterval = parseInt(process.env.MOVING_INTERVAL) || 1000;
 
 const settingsPar = {
     wmsChannel: process.env.WMS_CHANNEL || 17,
@@ -279,6 +279,10 @@ function callback(err, msg) {
                     break;
                 }
 
+                if (!devices[msg.payload.snr]) {
+                    break;
+                }
+
                 if (typeof msg.payload.position !== "undefined") {
                     devices[msg.payload.snr].position = msg.payload.position;
                     client.publish('warema/' + msg.payload.snr + '/position', '' + msg.payload.position, {retain: true})
@@ -292,8 +296,8 @@ function callback(err, msg) {
                             client.publish('warema/' + msg.payload.snr + '/state', 'stopped', {retain: true});
                     }
                 }
-                if (typeof msg.payload.tilt !== "undefined") {
-                    devices[msg.payload.snr].tilt = msg.payload.tilt;
+                if (typeof msg.payload.angle !== "undefined" && !isNaN(msg.payload.angle)) {
+                    devices[msg.payload.snr].angle = msg.payload.angle;
                     client.publish('warema/' + msg.payload.snr + '/tilt', '' + msg.payload.angle, {retain: true})
                 }
                 break;
@@ -360,6 +364,11 @@ client.on('message', function (topic, message) {
     }
 
     //scope === 'warema'
+    if (!devices[device]) {
+        log.warn('Ignoring command for unknown device ' + device);
+        return;
+    }
+
     switch (command) {
         case 'set':
             switch (message) {
@@ -395,11 +404,16 @@ client.on('message', function (topic, message) {
             break;
         case 'set_position':
             log.debug('Setting ' + device + ' to ' + message + '%, angle ' + devices[device].angle);
-            stickUsb.vnBlindSetPosition(device, parseInt(message), parseInt(devices[device]['angle']))
+            stickUsb.vnBlindSetPosition(device, parseInt(message), devices[device].angle || 0)
             break;
         case 'set_tilt':
+            if (typeof devices[device].position === "undefined") {
+                // Don't guess, a wrong position would move the whole blind
+                log.warn('Position of ' + device + ' not known yet, ignoring tilt command');
+                break;
+            }
             log.debug('Setting ' + device + ' to ' + message + '°, position ' + devices[device].position);
-            stickUsb.vnBlindSetPosition(device, parseInt(devices[device]['position']), parseInt(message))
+            stickUsb.vnBlindSetPosition(device, devices[device].position, parseInt(message))
             break;
         case 'set_brightness':
             log.debug('Setting brightness of ' + device + ' to ' + message + '%');
